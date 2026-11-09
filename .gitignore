@@ -32,10 +32,6 @@ msbuild.wrn
 /server/[Rr]elease/
 /server/[Rr]eleases/
 data/
-/.dotnet/
-/.aspnet/
-/.vscode-server/
-/logs/
 .env
 .env.*
 !.env.example
