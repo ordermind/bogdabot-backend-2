@@ -19,4 +19,8 @@
     <NoWarn>$(NoWarn);CA1822</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="../shared/Bogdabot.Shared.csproj" />
+  </ItemGroup>
+
 </Project>

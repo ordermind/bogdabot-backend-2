@@ -35,7 +35,8 @@ This file provides high-signal repository context for AI coding agents working i
     2.  InfrastructureServiceLoader
     3.  AccountServiceLoader
     4.  TradingServiceLoader
-    5.  WebServiceLoader
+    5.  AdminServiceLoader
+    6.  WebServiceLoader
 - Bootstrapper execution order:
     1.  SharedBootstrapper
     2.  InfrastructureBootstrapper
@@ -48,9 +49,9 @@ This order matters when introducing new dependencies or startup side effects.
 ## API Conventions
 
 - API routes are versioned under /api/v1.
-- Debug endpoints exist under /api/v1/debug/* and include migrate-fresh actions.
-- Debug controllers are development-only:
-    - Program.cs removes them outside Development using ExcludeControllerFeatureProvider.
+- Administrative commands are served over the Unix socket at `/tmp/bogdabot/admin-socket` in Development only.
+- Run administrative commands with `dotnet run --project cli/Bogdabot.Cli.csproj -- <command>`.
+  Supported commands are `migrate-fresh-main` and `migrate-fresh-traders`.
 
 ## Database Model
 
