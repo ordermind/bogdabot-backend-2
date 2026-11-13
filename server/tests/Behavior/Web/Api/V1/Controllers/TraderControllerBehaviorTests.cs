@@ -11,6 +11,8 @@ using Bogdabot.Server.Web.Gateway;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using Bogdabot.Server.Shared.Pagination;
+using Bogdabot.Server.Tests.TestSupport;
 
 namespace Bogdabot.Server.Tests.Behavior.Web.Api.V1.Controllers;
 
@@ -100,9 +102,9 @@ public class TraderControllerBehaviorTests
         currentUserService.GetCurrentUser().Returns(Task.FromResult(currentUser));
 
         var traderRepository = Substitute.For<ITraderRepository>();
-        traderRepository.GetAllForUser(Arg.Any<ulong>())
-            .Returns(call => Task.FromResult<IEnumerable<TraderEntity>>(
-                traders.Where(t => t.UserId == call.Arg<ulong>()).ToList()));
+        traderRepository.GetAllForUser(Arg.Any<ulong>(), Arg.Any<PageRequest>())
+            .Returns(call => Task.FromResult(TestPages.Single<TraderEntity>(
+                traders.Where(t => t.UserId == call.Arg<ulong>()).ToList())));
         traderRepository.GetOneByUserIdAndGuid(Arg.Any<ulong>(), Arg.Any<NonEmptyGuid>())
             .Returns(call => Task.FromResult(
                 traders.FirstOrDefault(t => t.UserId == call.ArgAt<ulong>(0) && t.Guid == call.ArgAt<NonEmptyGuid>(1))

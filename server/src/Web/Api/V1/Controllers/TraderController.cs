@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Bogdabot.Server.Shared.Pagination;
 using Bogdabot.Server.Web.Api.V1.Transformers;
 using Bogdabot.Server.Shared.Trading;
 using Bogdabot.Server.Shared.Users;
@@ -32,7 +34,10 @@ public class TraderController(
     private ILogger<TraderController> Logger { get; } = logger;
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(
+        [FromQuery, Range(1, PageRequest.MaxPage)] int page = 1,
+        [FromQuery, Range(1, PageRequest.MaxPageSize)] int pageSize = PageRequest.DefaultPageSize
+    )
     {
         var currentUser = await CurrentUserService.GetCurrentUser();
         if (currentUser is null)
@@ -43,7 +48,7 @@ public class TraderController(
             );
         }
 
-        var entities = await TraderRepository.GetAllForUser(currentUser.Id);
+        var entities = await TraderRepository.GetAllForUser(currentUser.Id, new PageRequest(page, pageSize));
 
         return Ok(entities);
     }

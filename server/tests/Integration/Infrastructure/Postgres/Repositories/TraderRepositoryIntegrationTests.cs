@@ -1,6 +1,7 @@
 using Bogdabot.Server.Infrastructure.Postgres.DbContexts;
 using Bogdabot.Server.Infrastructure.Postgres.Repositories;
 using Bogdabot.Server.Shared.Trading.Config;
+using Bogdabot.Server.Shared.Pagination;
 using Bogdabot.Server.Shared.ValueObjects;
 using Bogdabot.Server.Trading.Entities;
 using Bogdabot.Server.Trading.Enums;
@@ -131,7 +132,7 @@ public class TraderRepositoryIntegrationTests
 
         var repository = new TraderRepository(contextFactory);
 
-        var traders = (await repository.GetAllForUser(1)).ToList();
+        var traders = (await repository.GetAllForUser(1, PageRequest.First())).Items.ToList();
 
         Assert.Equal(2, traders.Count);
         Assert.All(traders, trader => Assert.Equal((ulong)1, trader.UserId));
@@ -159,7 +160,7 @@ public class TraderRepositoryIntegrationTests
 
         var repository = new TraderRepository(contextFactory);
 
-        var traders = (await repository.GetAllForUser(user)).ToList();
+        var traders = (await repository.GetAllForUser(user, PageRequest.First())).Items.ToList();
 
         Assert.Single(traders);
         Assert.Equal(user.Id, traders[0].UserId);
@@ -178,7 +179,7 @@ public class TraderRepositoryIntegrationTests
 
         var repository = new TraderRepository(contextFactory);
 
-        var traders = (await repository.GetAllForUser(matchingUserGuid)).ToList();
+        var traders = (await repository.GetAllForUser(matchingUserGuid, PageRequest.First())).Items.ToList();
 
         Assert.Equal(2, traders.Count);
         Assert.All(traders, trader => Assert.Equal(matchingUserGuid, trader.UserGuid));
@@ -197,8 +198,8 @@ public class TraderRepositoryIntegrationTests
 
         var repository = new TraderRepository(contextFactory);
 
-        var byId = (await repository.GetAllForUser(51, context)).ToList();
-        var byGuid = (await repository.GetAllForUser(matchingUserGuid, context)).ToList();
+        var byId = (await repository.GetAllForUser(51, PageRequest.First(), context)).Items.ToList();
+        var byGuid = (await repository.GetAllForUser(matchingUserGuid, PageRequest.First(), context)).Items.ToList();
 
         Assert.Equal(2, byId.Count);
         Assert.All(byId, trader => Assert.Equal((ulong)51, trader.UserId));
@@ -356,7 +357,7 @@ public class TraderRepositoryIntegrationTests
 
         var repository = new TraderRepository(contextFactory);
 
-        var traders = (await repository.GetActiveTradersForUser(userGuid)).ToList();
+        var traders = (await repository.GetActiveTradersForUser(userGuid, PageRequest.First())).Items.ToList();
 
         Assert.Single(traders);
         Assert.All(traders, trader => Assert.Equal(TraderStatusEnum.Running, trader.Status));
@@ -438,6 +439,78 @@ public class TraderRepositoryIntegrationTests
         await repository.Delete(trader);
 
         Assert.Null(await context.Traders.SingleOrDefaultAsync(x => x.Guid == trader.Guid, cancellationToken));
+    }
+
+    [Fact]
+    public async Task GetAllForUser_ReturnsPagesOrderedById_AndReportsWhetherANextPageExists()
+    {
+        await using var context = CreateContext(out var contextFactory);
+        var userGuid = NonEmptyGuid.NewGuid();
+        context.Traders.AddRange(Enumerable.Range(0, 5).Select(_ => CreateTrader(61, userGuid)));
+        context.Traders.Add(CreateTrader(62, NonEmptyGuid.NewGuid()));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var repository = new TraderRepository(contextFactory);
+        var expectedIds = context.Traders.Where(trader => trader.UserId == 61).Select(trader => trader.Id).OrderBy(id => id).ToList();
+
+        var first = await repository.GetAllForUser(61, new PageRequest(1, 2));
+        var second = await repository.GetAllForUser(userGuid, new PageRequest(2, 2));
+        var third = await repository.GetAllForUser(61, new PageRequest(3, 2));
+        var beyond = await repository.GetAllForUser(61, new PageRequest(4, 2));
+
+        Assert.Equal(expectedIds[0..2], first.Items.Select(trader => trader.Id));
+        Assert.True(first.HasNextPage);
+        Assert.Equal(expectedIds[2..4], second.Items.Select(trader => trader.Id));
+        Assert.True(second.HasNextPage);
+        Assert.Equal(expectedIds[4..], third.Items.Select(trader => trader.Id));
+        Assert.False(third.HasNextPage);
+        Assert.Empty(beyond.Items);
+        Assert.False(beyond.HasNextPage);
+        Assert.Equal((3, 2), (third.Page, third.PageSize));
+    }
+
+    [Fact]
+    public async Task GetAllForUser_NeverReturnsMoreThanMaxPageSizeItems()
+    {
+        await using var context = CreateContext(out var contextFactory);
+        var userGuid = NonEmptyGuid.NewGuid();
+        context.Traders.AddRange(Enumerable.Range(0, PageRequest.MaxPageSize + 1).Select(_ => CreateTrader(63, userGuid)));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var repository = new TraderRepository(contextFactory);
+
+        var first = await repository.GetAllForUser(63, PageRequest.First());
+        var second = await repository.GetAllForUser(63, new PageRequest(2));
+
+        Assert.Equal(PageRequest.MaxPageSize, first.Items.Count);
+        Assert.True(first.HasNextPage);
+        Assert.Single(second.Items);
+        Assert.False(second.HasNextPage);
+    }
+
+    [Fact]
+    public async Task GetActiveTradersForUser_PaginatesOnlyRunningTraders()
+    {
+        await using var context = CreateContext(out var contextFactory);
+        var userGuid = NonEmptyGuid.NewGuid();
+        var running = Enumerable.Range(0, 3).Select(_ => CreateTrader(64, userGuid)).ToList();
+        running.ForEach(trader => trader.Status = TraderStatusEnum.Running);
+        context.Traders.AddRange(running);
+        context.Traders.Add(CreateTrader(64, userGuid));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var repository = new TraderRepository(contextFactory);
+
+        var first = await repository.GetActiveTradersForUser(userGuid, new PageRequest(1, 2));
+        var second = await repository.GetActiveTradersForUser(userGuid, new PageRequest(2, 2), context);
+
+        Assert.Equal(2, first.Items.Count);
+        Assert.True(first.HasNextPage);
+        Assert.Single(second.Items);
+        Assert.False(second.HasNextPage);
+        Assert.Equal(
+            running.Select(trader => trader.Id).Order(),
+            first.Items.Concat(second.Items).Select(trader => trader.Id));
     }
 
     private static TraderDbContext CreateContext(out IDbContextFactory<TraderDbContext> contextFactory)

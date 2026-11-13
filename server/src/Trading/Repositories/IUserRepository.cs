@@ -1,10 +1,11 @@
 using Bogdabot.Server.Account.Entities;
 using Bogdabot.Server.Infrastructure.Postgres.DbContexts;
+using Bogdabot.Server.Shared.Pagination;
 
 namespace Bogdabot.Server.Trading.Repositories;
 
 public interface IUserRepository
 {
-    Task<IEnumerable<UserEntity>> GetAllUsersWithActiveTraders();
-    Task<IEnumerable<UserEntity>> GetAllUsersWithActiveTraders(UserDbContext context, TraderDbContext traderContext);
+    Task<PagedResult<UserEntity>> GetAllUsersWithActiveTraders(PageRequest page);
+    Task<PagedResult<UserEntity>> GetAllUsersWithActiveTraders(PageRequest page, UserDbContext context, TraderDbContext traderContext);
 }

@@ -1,6 +1,7 @@
 using Bogdabot.Server.Account.Entities;
 using Bogdabot.Server.Infrastructure.Postgres.DbContexts;
 using Bogdabot.Server.Infrastructure.Postgres.Repositories;
+using Bogdabot.Server.Shared.Pagination;
 using Bogdabot.Server.Shared.ValueObjects;
 using Bogdabot.Server.Trading.Entities;
 using Bogdabot.Server.Trading.Enums;
@@ -33,7 +34,7 @@ public class UserRepositoryIntegrationTests
 
         var repository = CreateRepository(databaseName);
 
-        var users = (await repository.GetAllUsersWithActiveTraders()).ToList();
+        var users = (await repository.GetAllUsersWithActiveTraders(PageRequest.First())).Items.ToList();
 
         Assert.Equal(2, users.Count);
         Assert.Contains(users, user => user.Id == firstActiveUser.Id);
@@ -63,7 +64,7 @@ public class UserRepositoryIntegrationTests
 
         var repository = CreateRepository(databaseName);
 
-        var users = (await repository.GetAllUsersWithActiveTraders()).ToList();
+        var users = (await repository.GetAllUsersWithActiveTraders(PageRequest.First())).Items.ToList();
 
         Assert.Single(users);
         Assert.Equal(activeUser.Id, users[0].Id);
@@ -87,7 +88,7 @@ public class UserRepositoryIntegrationTests
 
         var repository = CreateRepository(databaseName);
 
-        var users = await repository.GetAllUsersWithActiveTraders();
+        var users = (await repository.GetAllUsersWithActiveTraders(PageRequest.First())).Items;
 
         Assert.Empty(users);
     }
@@ -112,10 +113,72 @@ public class UserRepositoryIntegrationTests
 
         var repository = CreateRepository(databaseName);
 
-        var users = (await repository.GetAllUsersWithActiveTraders()).ToList();
+        var users = (await repository.GetAllUsersWithActiveTraders(PageRequest.First())).Items.ToList();
 
         Assert.Single(users);
         Assert.Equal(existingUser.Id, users[0].Id);
+    }
+
+    [Fact]
+    public async Task GetAllUsersWithActiveTraders_PaginatesOverDistinctActiveUsersOrderedById()
+    {
+        var databaseName = $"user-repo-tests-{Guid.NewGuid()}";
+
+        await using var userContext = CreateUserContext(databaseName);
+        await using var traderContext = CreateTraderContext(databaseName);
+
+        var users = Enumerable.Range(1, 3)
+            .Select(id => CreateUser((ulong)id, NonEmptyGuid.NewGuid(), $"user{id}@example.com"))
+            .ToList();
+        userContext.Users.AddRange(users);
+        await userContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // Two running traders per user must not produce duplicate users or shift the page boundaries.
+        traderContext.Traders.AddRange(users.SelectMany(user => new[]
+        {
+            CreateTrader(user.Id, user.Guid, TraderStatusEnum.Running),
+            CreateTrader(user.Id, user.Guid, TraderStatusEnum.Running),
+        }));
+        await traderContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var repository = CreateRepository(databaseName);
+
+        var first = await repository.GetAllUsersWithActiveTraders(new PageRequest(1, 2));
+        var second = await repository.GetAllUsersWithActiveTraders(new PageRequest(2, 2), userContext, traderContext);
+
+        Assert.Equal([1ul, 2ul], first.Items.Select(user => user.Id));
+        Assert.True(first.HasNextPage);
+        Assert.Equal([3ul], second.Items.Select(user => user.Id));
+        Assert.False(second.HasNextPage);
+    }
+
+    [Fact]
+    public async Task GetAllUsersWithActiveTraders_ReportsNextPage_EvenWhenUsersOfCurrentPageAreMissing()
+    {
+        var databaseName = $"user-repo-tests-{Guid.NewGuid()}";
+
+        await using var userContext = CreateUserContext(databaseName);
+        await using var traderContext = CreateTraderContext(databaseName);
+
+        var existingUser = CreateUser(10, NonEmptyGuid.NewGuid(), "existing@example.com");
+        userContext.Users.Add(existingUser);
+        await userContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        traderContext.Traders.AddRange(
+            CreateTrader(1, NonEmptyGuid.NewGuid(), TraderStatusEnum.Running),
+            CreateTrader(existingUser.Id, existingUser.Guid, TraderStatusEnum.Running)
+        );
+        await traderContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var repository = CreateRepository(databaseName);
+
+        var first = await repository.GetAllUsersWithActiveTraders(new PageRequest(1, 1));
+        var second = await repository.GetAllUsersWithActiveTraders(new PageRequest(2, 1));
+
+        Assert.Empty(first.Items);
+        Assert.True(first.HasNextPage);
+        Assert.Equal(existingUser.Id, Assert.Single(second.Items).Id);
+        Assert.False(second.HasNextPage);
     }
 
     private static UserDbContext CreateUserContext(string databaseName)

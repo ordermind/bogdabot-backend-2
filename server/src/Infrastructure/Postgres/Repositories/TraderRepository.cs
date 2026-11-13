@@ -3,6 +3,8 @@ using Bogdabot.Server.Trading.Entities;
 using SharedTraderRepository = Bogdabot.Server.Shared.Trading.ITraderRepository;
 using TradingTraderRepository = Bogdabot.Server.Trading.Repositories.ITraderRepository;
 using Microsoft.EntityFrameworkCore;
+using Bogdabot.Server.Infrastructure.Miscellaneous.Database.Extensions;
+using Bogdabot.Server.Shared.Pagination;
 using Bogdabot.Server.Shared.ValueObjects;
 using Bogdabot.Server.Shared.Trading.Config;
 using Bogdabot.Server.Account.Entities;
@@ -13,39 +15,41 @@ public class TraderRepository(IDbContextFactory<TraderDbContext> contextFactory)
 {
     private IDbContextFactory<TraderDbContext> ContextFactory { get; } = contextFactory;
 
-    public async Task<IEnumerable<TraderEntity>> GetAllForUser(UserEntity userEntity)
+    public async Task<PagedResult<TraderEntity>> GetAllForUser(UserEntity userEntity, PageRequest page)
     {
-        return await GetAllForUser(userEntity.Id);
+        return await GetAllForUser(userEntity.Id, page);
     }
 
-    public async Task<IEnumerable<TraderEntity>> GetAllForUser(ulong userId)
+    public async Task<PagedResult<TraderEntity>> GetAllForUser(ulong userId, PageRequest page)
     {
         await using var context = await ContextFactory.CreateDbContextAsync();
 
-        return await GetAllForUser(userId, context);
+        return await GetAllForUser(userId, page, context);
     }
 
-    public async Task<IEnumerable<TraderEntity>> GetAllForUser(ulong userId, TraderDbContext context)
+    public async Task<PagedResult<TraderEntity>> GetAllForUser(ulong userId, PageRequest page, TraderDbContext context)
     {
         return await context.Traders
             .Where(trader => trader.UserId == userId)
-            .ToListAsync();
+            .OrderBy(trader => trader.Id)
+            .ToPagedResultAsync(page);
     }
 
-    public async Task<IEnumerable<TraderEntity>> GetAllForUser(NonEmptyGuid userGuid)
+    public async Task<PagedResult<TraderEntity>> GetAllForUser(NonEmptyGuid userGuid, PageRequest page)
     {
         await using var context = await ContextFactory.CreateDbContextAsync();
 
-        return await GetAllForUser(userGuid, context);
+        return await GetAllForUser(userGuid, page, context);
     }
 
-    public async Task<IEnumerable<TraderEntity>> GetAllForUser(NonEmptyGuid userGuid, TraderDbContext context)
+    public async Task<PagedResult<TraderEntity>> GetAllForUser(NonEmptyGuid userGuid, PageRequest page, TraderDbContext context)
     {
         return await context.Traders
             .Where(
                 trader => trader.UserGuid == userGuid
             )
-            .ToListAsync();
+            .OrderBy(trader => trader.Id)
+            .ToPagedResultAsync(page);
     }
 
     public async Task<TraderEntity?> GetOneByUserIdAndGuid(ulong userId, NonEmptyGuid traderGuid)
@@ -168,20 +172,21 @@ public class TraderRepository(IDbContextFactory<TraderDbContext> contextFactory)
         await context.SaveChangesAsync();
     }
 
-    public async Task<IEnumerable<TraderEntity>> GetActiveTradersForUser(NonEmptyGuid userGuid)
+    public async Task<PagedResult<TraderEntity>> GetActiveTradersForUser(NonEmptyGuid userGuid, PageRequest page)
     {
         await using var context = await ContextFactory.CreateDbContextAsync();
 
-        return await GetActiveTradersForUser(userGuid, context);
+        return await GetActiveTradersForUser(userGuid, page, context);
     }
 
-    public async Task<IEnumerable<TraderEntity>> GetActiveTradersForUser(NonEmptyGuid userGuid, TraderDbContext context)
+    public async Task<PagedResult<TraderEntity>> GetActiveTradersForUser(NonEmptyGuid userGuid, PageRequest page, TraderDbContext context)
     {
         return await context.Traders
             .Where(
                 trader => trader.UserGuid == userGuid
                 && trader.Status == TraderStatusEnum.Running
             )
-            .ToListAsync();
+            .OrderBy(trader => trader.Id)
+            .ToPagedResultAsync(page);
     }
 }

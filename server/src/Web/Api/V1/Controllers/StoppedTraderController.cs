@@ -1,6 +1,8 @@
 namespace Bogdabot.Server.Web.Api.V1.Controllers;
 
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Bogdabot.Server.Shared.Pagination;
 using Bogdabot.Server.Shared.Trading;
 using Bogdabot.Server.Shared.Users;
 using Bogdabot.Server.Shared.ValueObjects;
@@ -18,7 +20,10 @@ public class StoppedTraderController(
     private ILogger<StoppedTraderController> Logger { get; } = logger;
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(
+        [FromQuery, Range(1, PageRequest.MaxPage)] int page = 1,
+        [FromQuery, Range(1, PageRequest.MaxPageSize)] int pageSize = PageRequest.DefaultPageSize
+    )
     {
         var currentUser = await CurrentUserService.GetCurrentUser();
         if (currentUser is null)
@@ -29,7 +34,7 @@ public class StoppedTraderController(
             );
         }
 
-        var entities = await StoppedTraderRepository.GetAllForUser(currentUser.Id);
+        var entities = await StoppedTraderRepository.GetAllForUser(currentUser.Id, new PageRequest(page, pageSize));
 
         return Ok(entities);
     }

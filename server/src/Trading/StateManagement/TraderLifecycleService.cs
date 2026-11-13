@@ -1,5 +1,6 @@
 using Bogdabot.Server.Shared.Config.Database;
 using Bogdabot.Server.Shared.Database;
+using Bogdabot.Server.Shared.Pagination;
 using Bogdabot.Server.Shared.Trading;
 using Bogdabot.Server.Shared.Trading.Config;
 using Bogdabot.Server.Shared.ValueObjects;
@@ -102,7 +103,7 @@ public class TraderLifecycleService(
 
     public async Task<IEnumerable<TraderIdentifier>> GetActiveTradersForUser(NonEmptyGuid userGuid)
     {
-        var traders = await TraderRepository.GetActiveTradersForUser(userGuid);
+        var traders = await Paginator.FetchAll(page => TraderRepository.GetActiveTradersForUser(userGuid, page));
 
         return traders
             .Select(trader => new TraderIdentifier

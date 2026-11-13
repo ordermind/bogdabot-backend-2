@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Bogdabot.Server.Account.Entities;
+using Bogdabot.Server.Shared.Pagination;
 using Bogdabot.Server.Shared.Trading;
 using Bogdabot.Server.Shared.Users;
 using Bogdabot.Server.Shared.ValueObjects;
@@ -117,6 +118,76 @@ public class TraderControllerHttpBehaviorTests
         Assert.NotNull(payload);
         Assert.Equal($"The stopped trader {traderGuid} could not be restarted. Please create a new trader instead.", payload.Title);
         await traderGateway.DidNotReceive().StartActiveTrader(Arg.Any<TraderIdentifier>());
+    }
+
+    [Theory]
+    [InlineData("/api/v1/traders?pageSize=101")]
+    [InlineData("/api/v1/traders?pageSize=0")]
+    [InlineData("/api/v1/traders?page=0")]
+    [InlineData("/api/v1/stopped-traders?pageSize=101")]
+    [InlineData("/api/v1/stopped-traders?pageSize=0")]
+    [InlineData("/api/v1/stopped-traders?page=0")]
+    public async Task GetAll_WithOutOfRangePaging_ReturnsBadRequestWithoutQueryingRepository(string url)
+    {
+        var currentUserService = Substitute.For<IFetchesCurrentUser>();
+        currentUserService.GetCurrentUser().Returns(Task.FromResult<UserEntity?>(CreateUser()));
+
+        var traderRepository = Substitute.For<ITraderRepository>();
+        var stoppedTraderRepository = Substitute.For<IStoppedTraderRepository>();
+
+        using var host = await CreateHost(currentUserService, Substitute.For<IWebTraderGateway>(), traderRepository, stoppedTraderRepository);
+        using var client = host.GetTestClient();
+
+        var response = await client.GetAsync(url, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await traderRepository.DidNotReceiveWithAnyArgs().GetAllForUser(default, default!);
+        await stoppedTraderRepository.DidNotReceiveWithAnyArgs().GetAllForUser(default, default!);
+    }
+
+    [Fact]
+    public async Task GetAllTraders_WithPagingQuery_ForwardsPageAndReturnsPageEnvelope()
+    {
+        var currentUser = CreateUser();
+        var currentUserService = Substitute.For<IFetchesCurrentUser>();
+        currentUserService.GetCurrentUser().Returns(Task.FromResult<UserEntity?>(currentUser));
+
+        var traderRepository = Substitute.For<ITraderRepository>();
+        traderRepository.GetAllForUser(currentUser.Id, new PageRequest(2, 100))
+            .Returns(Task.FromResult(new PagedResult<TraderEntity>([], 2, 100, true)));
+
+        using var host = await CreateHost(currentUserService, Substitute.For<IWebTraderGateway>(), traderRepository, Substitute.For<IStoppedTraderRepository>());
+        using var client = host.GetTestClient();
+
+        var response = await client.GetAsync("/api/v1/traders?page=2&pageSize=100", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, payload.RootElement.GetProperty("items").GetArrayLength());
+        Assert.Equal(2, payload.RootElement.GetProperty("page").GetInt32());
+        Assert.Equal(100, payload.RootElement.GetProperty("pageSize").GetInt32());
+        Assert.True(payload.RootElement.GetProperty("hasNextPage").GetBoolean());
+        await traderRepository.Received(1).GetAllForUser(currentUser.Id, new PageRequest(2, 100));
+    }
+
+    [Fact]
+    public async Task GetAllStoppedTraders_WithoutPagingQuery_RequestsFirstPageWithDefaultSize()
+    {
+        var currentUser = CreateUser();
+        var currentUserService = Substitute.For<IFetchesCurrentUser>();
+        currentUserService.GetCurrentUser().Returns(Task.FromResult<UserEntity?>(currentUser));
+
+        var stoppedTraderRepository = Substitute.For<IStoppedTraderRepository>();
+        stoppedTraderRepository.GetAllForUser(Arg.Any<ulong>(), Arg.Any<PageRequest>())
+            .Returns(call => Task.FromResult(PagedResult<StoppedTraderEntity>.Empty(call.Arg<PageRequest>()!)));
+
+        using var host = await CreateHost(currentUserService, Substitute.For<IWebTraderGateway>(), Substitute.For<ITraderRepository>(), stoppedTraderRepository);
+        using var client = host.GetTestClient();
+
+        var response = await client.GetAsync("/api/v1/stopped-traders", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await stoppedTraderRepository.Received(1).GetAllForUser(currentUser.Id, new PageRequest(1, PageRequest.DefaultPageSize));
     }
 
     private static UserEntity CreateUser()

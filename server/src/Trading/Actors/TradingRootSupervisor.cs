@@ -1,6 +1,7 @@
 using Akka.Actor;
 using Akka.DependencyInjection;
 using Bogdabot.Server.Shared.Errors;
+using Bogdabot.Server.Shared.Pagination;
 using Bogdabot.Server.Shared.Trading;
 using Bogdabot.Server.Shared.ValueObjects;
 using Bogdabot.Server.Trading.Actors.Helpers;
@@ -93,7 +94,9 @@ public class TradingRootSupervisor(
         try
         {
             // Start up trader supervisors for all users with active traders.
-            foreach (var user in await UserRepository.GetAllUsersWithActiveTraders())
+            var usersWithActiveTraders = await Paginator.FetchAll(UserRepository.GetAllUsersWithActiveTraders);
+
+            foreach (var user in usersWithActiveTraders)
             {
                 var actorId = PerUserTraderSupervisorId.FromUserGuid(user.Guid);
 

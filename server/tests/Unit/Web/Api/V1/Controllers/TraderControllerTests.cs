@@ -12,6 +12,8 @@ using Bogdabot.Server.Web.Gateway;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using Bogdabot.Server.Shared.Pagination;
+using Bogdabot.Server.Tests.TestSupport;
 
 namespace Bogdabot.Server.Tests.Unit.Web.Api.V1.Controllers;
 
@@ -54,10 +56,40 @@ public class TraderControllerTests
         var result = await controller.GetAll();
 
         var ok = Assert.IsType<OkObjectResult>(result);
-        var traders = Assert.IsAssignableFrom<IEnumerable<TraderEntity>>(ok.Value).ToList();
+        var page = Assert.IsType<PagedResult<TraderEntity>>(ok.Value);
 
-        Assert.Single(traders);
-        Assert.Equal(ownedTrader.Guid, traders[0].Guid);
+        Assert.Single(page.Items);
+        Assert.Equal(ownedTrader.Guid, page.Items[0].Guid);
+        Assert.False(page.HasNextPage);
+    }
+
+    [Fact]
+    public async Task GetAll_ForwardsRequestedPageToRepository()
+    {
+        var currentUser = CreateUser();
+        var gateway = Substitute.For<IWebTraderGateway>();
+        var currentUserService = Substitute.For<IFetchesCurrentUser>();
+        currentUserService.GetCurrentUser().Returns(Task.FromResult<UserEntity?>(currentUser));
+
+        var expectedPage = new PagedResult<TraderEntity>([CreateTrader(currentUser.Id, currentUser.Guid)], 3, 25, true);
+        var traderRepository = Substitute.For<ITraderRepository>();
+        traderRepository.GetAllForUser(currentUser.Id, new PageRequest(3, 25))
+            .Returns(Task.FromResult(expectedPage));
+
+        var controller = new TraderController(
+            gateway,
+            new WebTransformer(),
+            currentUserService,
+            traderRepository,
+            Substitute.For<IStoppedTraderRepository>(),
+            Substitute.For<ILogger<TraderController>>()
+        );
+
+        var result = await controller.GetAll(page: 3, pageSize: 25);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Same(expectedPage, ok.Value);
+        await traderRepository.Received(1).GetAllForUser(currentUser.Id, new PageRequest(3, 25));
     }
 
     [Fact]
@@ -705,9 +737,9 @@ public class TraderControllerTests
         currentUserService.GetCurrentUser().Returns(Task.FromResult(currentUser));
 
         var traderRepository = Substitute.For<ITraderRepository>();
-        traderRepository.GetAllForUser(Arg.Any<ulong>())
-            .Returns(call => Task.FromResult<IEnumerable<TraderEntity>>(
-                traders.Where(t => t.UserId == call.Arg<ulong>()).ToList()));
+        traderRepository.GetAllForUser(Arg.Any<ulong>(), Arg.Any<PageRequest>())
+            .Returns(call => Task.FromResult(TestPages.Single<TraderEntity>(
+                traders.Where(t => t.UserId == call.Arg<ulong>()).ToList())));
         traderRepository.GetOneByUserIdAndGuid(Arg.Any<ulong>(), Arg.Any<NonEmptyGuid>())
             .Returns(call => Task.FromResult(
                 traders.FirstOrDefault(t => t.UserId == call.ArgAt<ulong>(0) && t.Guid == call.ArgAt<NonEmptyGuid>(1))

@@ -8,6 +8,8 @@ using Bogdabot.Server.Trading.Enums;
 using Bogdabot.Server.Trading.StateManagement;
 using Bogdabot.Server.Trading.Transformers;
 using NSubstitute;
+using Bogdabot.Server.Shared.Pagination;
+using Bogdabot.Server.Tests.TestSupport;
 
 namespace Bogdabot.Server.Tests.Unit.Trading.StateManagement;
 
@@ -87,16 +89,40 @@ public class TraderLifecycleServiceTests
         var userGuid = NonEmptyGuid.NewGuid();
         var traderGuid = NonEmptyGuid.NewGuid();
 
-        repository.GetActiveTradersForUser(userGuid)
-            .Returns(Task.FromResult<IEnumerable<TraderEntity>>([
+        repository.GetActiveTradersForUser(userGuid, Arg.Any<PageRequest>())
+            .Returns(Task.FromResult(TestPages.Single<TraderEntity>([
                 CreateTraderEntity(traderGuid, TraderStatusEnum.Running, userGuid)
-            ]));
+            ])));
 
         var result = (await sut.GetActiveTradersForUser(userGuid)).ToList();
 
         Assert.Single(result);
         Assert.Equal(userGuid, result[0].UserGuid);
         Assert.Equal(traderGuid, result[0].TraderGuid);
+    }
+
+    [Fact]
+    public async Task GetActiveTradersForUser_FetchesEveryPageInBatchesOfAtMostMaxPageSize()
+    {
+        var repository = Substitute.For<Bogdabot.Server.Trading.Repositories.ITraderRepository>();
+        var stoppedRepository = Substitute.For<Bogdabot.Server.Trading.Repositories.IStoppedTraderRepository>();
+        var dbManager = Substitute.For<ITraderDatabaseManager>();
+        var transformer = new TraderEntityToTraderConfigurationTransformer();
+        var sut = new TraderLifecycleService(repository, stoppedRepository, dbManager, transformer);
+
+        var userGuid = NonEmptyGuid.NewGuid();
+        var firstPageTrader = CreateTraderEntity(NonEmptyGuid.NewGuid(), TraderStatusEnum.Running, userGuid);
+        var secondPageTrader = CreateTraderEntity(NonEmptyGuid.NewGuid(), TraderStatusEnum.Running, userGuid);
+
+        repository.GetActiveTradersForUser(userGuid, new PageRequest(1, PageRequest.MaxPageSize))
+            .Returns(Task.FromResult(new PagedResult<TraderEntity>([firstPageTrader], 1, PageRequest.MaxPageSize, true)));
+        repository.GetActiveTradersForUser(userGuid, new PageRequest(2, PageRequest.MaxPageSize))
+            .Returns(Task.FromResult(new PagedResult<TraderEntity>([secondPageTrader], 2, PageRequest.MaxPageSize, false)));
+
+        var result = (await sut.GetActiveTradersForUser(userGuid)).Select(identifier => identifier.TraderGuid).ToList();
+
+        Assert.Equal([firstPageTrader.Guid, secondPageTrader.Guid], result);
+        await repository.Received(2).GetActiveTradersForUser(userGuid, Arg.Any<PageRequest>());
     }
 
     [Fact]

@@ -11,6 +11,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NSubstitute;
+using Bogdabot.Server.Shared.Pagination;
+using Bogdabot.Server.Tests.TestSupport;
 
 namespace Bogdabot.Server.Tests.Integration.Infrastructure.Akka;
 
@@ -20,8 +22,8 @@ public class ActorHostServiceIntegrationTests
     public async Task StopAsync_TerminatesActorsAndAllowsActorSystemToRestart()
     {
         var userRepository = Substitute.For<IUserRepository>();
-        userRepository.GetAllUsersWithActiveTraders()
-            .Returns(Task.FromResult<IEnumerable<UserEntity>>([]));
+        userRepository.GetAllUsersWithActiveTraders(Arg.Any<PageRequest>())
+            .Returns(Task.FromResult(TestPages.Single<UserEntity>([])));
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(Substitute.For<ITraderLifecycleService>());

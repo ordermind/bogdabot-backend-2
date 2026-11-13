@@ -8,6 +8,8 @@ using Bogdabot.Server.Web.Api.V1.Controllers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using Bogdabot.Server.Shared.Pagination;
+using Bogdabot.Server.Tests.TestSupport;
 
 namespace Bogdabot.Server.Tests.Unit.Web.Api.V1.Controllers;
 
@@ -23,9 +25,21 @@ public class StoppedTraderControllerTests
         var result = await controller.GetAll();
 
         var ok = Assert.IsType<OkObjectResult>(result);
-        var traders = Assert.IsAssignableFrom<IEnumerable<StoppedTraderEntity>>(ok.Value);
-        Assert.Same(stoppedTrader, Assert.Single(traders));
-        await repository.Received(1).GetAllForUser(currentUser.Id);
+        var page = Assert.IsType<PagedResult<StoppedTraderEntity>>(ok.Value);
+        Assert.Same(stoppedTrader, Assert.Single(page.Items));
+        Assert.False(page.HasNextPage);
+        await repository.Received(1).GetAllForUser(currentUser.Id, new PageRequest(1, PageRequest.DefaultPageSize));
+    }
+
+    [Fact]
+    public async Task GetAll_ForwardsRequestedPageToRepository()
+    {
+        var currentUser = CreateUser();
+        var controller = CreateController(currentUser, [], out var repository);
+
+        await controller.GetAll(page: 2, pageSize: 10);
+
+        await repository.Received(1).GetAllForUser(currentUser.Id, new PageRequest(2, 10));
     }
 
     [Fact]
@@ -37,7 +51,7 @@ public class StoppedTraderControllerTests
 
         var problem = Assert.IsType<ObjectResult>(result);
         Assert.Equal(500, problem.StatusCode);
-        await repository.DidNotReceive().GetAllForUser(Arg.Any<ulong>());
+        await repository.DidNotReceive().GetAllForUser(Arg.Any<ulong>(), Arg.Any<PageRequest>());
     }
 
     [Fact]
@@ -166,9 +180,9 @@ public class StoppedTraderControllerTests
         currentUserService.GetCurrentUser().Returns(Task.FromResult(currentUser));
 
         repository = Substitute.For<IStoppedTraderRepository>();
-        repository.GetAllForUser(Arg.Any<ulong>())
-            .Returns(call => Task.FromResult<IEnumerable<StoppedTraderEntity>>(
-                stoppedTraders.Where(trader => trader.UserId == call.Arg<ulong>()).ToList()));
+        repository.GetAllForUser(Arg.Any<ulong>(), Arg.Any<PageRequest>())
+            .Returns(call => Task.FromResult(TestPages.Single<StoppedTraderEntity>(
+                stoppedTraders.Where(trader => trader.UserId == call.Arg<ulong>()).ToList())));
         repository.GetOneByUserIdAndGuid(Arg.Any<ulong>(), Arg.Any<NonEmptyGuid>())
             .Returns(call => Task.FromResult(stoppedTraders.FirstOrDefault(trader =>
                 trader.UserId == call.ArgAt<ulong>(0) && trader.Guid == call.ArgAt<NonEmptyGuid>(1))));

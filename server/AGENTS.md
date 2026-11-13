@@ -52,6 +52,16 @@ This order matters when introducing new dependencies or startup side effects.
 - Administrative commands are served over the Unix socket at `/tmp/bogdabot/admin-socket` in Development only.
 - Run administrative commands with `dotnet run --project cli/Bogdabot.Cli.csproj -- <command>`.
   Supported commands are `migrate-fresh-main` and `migrate-fresh-traders`.
+- List endpoints are paginated with `?page=` (1-based, default 1) and `?pageSize=` (1–100, default 100) and respond with
+  `{ items, page, pageSize, hasNextPage }`. Out-of-range values return 400.
+
+## Pagination
+
+- Every repository query that returns multiple rows takes a `PageRequest` (`src/Shared/Pagination`) and returns a
+  `PagedResult<T>`. A page can never hold more than `PageRequest.MaxPageSize` (100) items.
+- Order the query deterministically (by `Id`) and finish it with `ToPagedResultAsync(page)`
+  (`src/Infrastructure/Miscellaneous/Database/Extensions/QueryablePaginationExtensions.cs`).
+- Internal code that genuinely needs every row uses `Paginator.FetchAll(...)`, which reads in batches of at most 100.
 
 ## Database Model
 

@@ -1,4 +1,5 @@
 using Bogdabot.Server.Infrastructure.Postgres.DbContexts;
+using Bogdabot.Server.Shared.Pagination;
 using Bogdabot.Server.Shared.ValueObjects;
 using Bogdabot.Server.Trading.Entities;
 
@@ -6,8 +7,8 @@ namespace Bogdabot.Server.Trading.Repositories;
 
 public interface IStoppedTraderRepository
 {
-    Task<IEnumerable<StoppedTraderEntity>> GetAllForUser(NonEmptyGuid userGuid);
-    Task<IEnumerable<StoppedTraderEntity>> GetAllForUser(NonEmptyGuid userGuid, StoppedTraderDbContext context);
+    Task<PagedResult<StoppedTraderEntity>> GetAllForUser(NonEmptyGuid userGuid, PageRequest page);
+    Task<PagedResult<StoppedTraderEntity>> GetAllForUser(NonEmptyGuid userGuid, PageRequest page, StoppedTraderDbContext context);
 
     Task<StoppedTraderEntity?> GetOneByGuid(NonEmptyGuid traderGuid);
     Task<StoppedTraderEntity?> GetOneByGuid(NonEmptyGuid traderGuid, StoppedTraderDbContext context);

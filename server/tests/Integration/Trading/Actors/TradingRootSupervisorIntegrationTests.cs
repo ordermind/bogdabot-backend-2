@@ -21,6 +21,8 @@ using static Bogdabot.Server.Shared.Trading.MessageProtocols.TraderProtocols.Get
 using static Bogdabot.Server.Shared.Trading.MessageProtocols.TraderProtocols.GetTraderProtocol;
 using static Bogdabot.Server.Shared.Trading.MessageProtocols.TraderProtocols.StopAllTradersForUserProtocol;
 using Akka.DependencyInjection;
+using Bogdabot.Server.Shared.Pagination;
+using Bogdabot.Server.Tests.TestSupport;
 
 namespace Bogdabot.Server.Tests.Integration.Trading.Actors;
 
@@ -48,7 +50,7 @@ public class TradingRootSupervisorIntegrationTests
         var traderIdentifier = new TraderIdentifier { UserGuid = userGuid, TraderGuid = traderGuid };
 
         var userRepository = Substitute.For<IUserRepository>();
-        userRepository.GetAllUsersWithActiveTraders().Returns(Task.FromResult<IEnumerable<UserEntity>>([
+        userRepository.GetAllUsersWithActiveTraders(Arg.Any<PageRequest>()).Returns(Task.FromResult(TestPages.Single<UserEntity>([
             new UserEntity
             {
                 Id = 1,
@@ -58,7 +60,7 @@ public class TradingRootSupervisorIntegrationTests
                 Email = "tester@example.com",
                 NormalizedEmail = "TESTER@EXAMPLE.COM"
             }
-        ]));
+        ])));
 
         var lifecycleService = Substitute.For<ITraderLifecycleService>();
         lifecycleService.GetActiveTradersForUser(userGuid).Returns(Task.FromResult<IEnumerable<TraderIdentifier>>([traderIdentifier]));
@@ -108,7 +110,7 @@ public class TradingRootSupervisorIntegrationTests
         var userGuid = NonEmptyGuid.NewGuid();
 
         var userRepository = Substitute.For<IUserRepository>();
-        userRepository.GetAllUsersWithActiveTraders().Returns(Task.FromResult<IEnumerable<UserEntity>>([]));
+        userRepository.GetAllUsersWithActiveTraders(Arg.Any<PageRequest>()).Returns(Task.FromResult(TestPages.Single<UserEntity>([])));
 
         var lifecycleService = Substitute.For<ITraderLifecycleService>();
         lifecycleService.GetActiveTradersForUser(userGuid).Returns(Task.FromResult<IEnumerable<TraderIdentifier>>([]));
@@ -161,7 +163,7 @@ public class TradingRootSupervisorIntegrationTests
         var userGuid = NonEmptyGuid.NewGuid();
 
         var userRepository = Substitute.For<IUserRepository>();
-        userRepository.GetAllUsersWithActiveTraders().Returns(Task.FromResult<IEnumerable<UserEntity>>([]));
+        userRepository.GetAllUsersWithActiveTraders(Arg.Any<PageRequest>()).Returns(Task.FromResult(TestPages.Single<UserEntity>([])));
 
         var lifecycleService = Substitute.For<ITraderLifecycleService>();
         lifecycleService.GetActiveTradersForUser(userGuid).Returns(Task.FromResult<IEnumerable<TraderIdentifier>>([]));
@@ -205,8 +207,8 @@ public class TradingRootSupervisorIntegrationTests
 
         var userRepository = Substitute.For<IUserRepository>();
         userRepository
-            .GetAllUsersWithActiveTraders()
-            .Returns(Task.FromResult<IEnumerable<UserEntity>>([]));
+            .GetAllUsersWithActiveTraders(Arg.Any<PageRequest>())
+            .Returns(Task.FromResult(TestPages.Single<UserEntity>([])));
 
         var lifecycleService = Substitute.For<ITraderLifecycleService>();
 
@@ -317,8 +319,8 @@ public class TradingRootSupervisorIntegrationTests
 
         var userRepository = Substitute.For<IUserRepository>();
         userRepository
-            .GetAllUsersWithActiveTraders()
-            .Returns(Task.FromResult<IEnumerable<UserEntity>>([]));
+            .GetAllUsersWithActiveTraders(Arg.Any<PageRequest>())
+            .Returns(Task.FromResult(TestPages.Single<UserEntity>([])));
 
         var lifecycleService = Substitute.For<ITraderLifecycleService>();
 
@@ -351,7 +353,7 @@ public class TradingRootSupervisorIntegrationTests
         var userGuid = NonEmptyGuid.NewGuid();
 
         var userRepository = Substitute.For<IUserRepository>();
-        userRepository.GetAllUsersWithActiveTraders().Returns(Task.FromResult<IEnumerable<UserEntity>>([]));
+        userRepository.GetAllUsersWithActiveTraders(Arg.Any<PageRequest>()).Returns(Task.FromResult(TestPages.Single<UserEntity>([])));
 
         var lifecycleService = Substitute.For<ITraderLifecycleService>();
         lifecycleService.GetActiveTradersForUser(userGuid).Returns(Task.FromResult<IEnumerable<TraderIdentifier>>([]));
@@ -397,7 +399,7 @@ public class TradingRootSupervisorIntegrationTests
         };
 
         var userRepository = Substitute.For<IUserRepository>();
-        userRepository.GetAllUsersWithActiveTraders().Returns(Task.FromResult<IEnumerable<UserEntity>>([user]));
+        userRepository.GetAllUsersWithActiveTraders(Arg.Any<PageRequest>()).Returns(Task.FromResult(TestPages.Single<UserEntity>([user])));
 
         var activeTradersTcs = new TaskCompletionSource<IEnumerable<TraderIdentifier>>(TaskCreationOptions.RunContinuationsAsynchronously);
         var lifecycleService = Substitute.For<ITraderLifecycleService>();
@@ -445,9 +447,9 @@ public class TradingRootSupervisorIntegrationTests
 
         var requestedUserGuid = NonEmptyGuid.NewGuid();
 
-        var usersLoadTcs = new TaskCompletionSource<IEnumerable<UserEntity>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var usersLoadTcs = new TaskCompletionSource<PagedResult<UserEntity>>(TaskCreationOptions.RunContinuationsAsynchronously);
         var userRepository = Substitute.For<IUserRepository>();
-        userRepository.GetAllUsersWithActiveTraders().Returns(usersLoadTcs.Task);
+        userRepository.GetAllUsersWithActiveTraders(Arg.Any<PageRequest>()).Returns(usersLoadTcs.Task);
 
         var lifecycleService = Substitute.For<ITraderLifecycleService>();
         lifecycleService.GetActiveTradersForUser(Arg.Any<NonEmptyGuid>()).Returns(Task.FromResult<IEnumerable<TraderIdentifier>>([]));
@@ -471,7 +473,7 @@ public class TradingRootSupervisorIntegrationTests
         await Assert.ThrowsAsync<TimeoutException>(async () =>
             await pendingResponse.WaitAsync(TimeSpan.FromMilliseconds(100), TestContext.Current.CancellationToken));
 
-        usersLoadTcs.TrySetResult([]);
+        usersLoadTcs.TrySetResult(TestPages.Single<UserEntity>([]));
 
         var response = await pendingResponse;
         Assert.IsType<TraderSupervisorFoundResponse>(response);
@@ -488,13 +490,13 @@ public class TradingRootSupervisorIntegrationTests
 
         var userRepository = Substitute.For<IUserRepository>();
         var fetchAttempts = 0;
-        userRepository.GetAllUsersWithActiveTraders().Returns(_ =>
+        userRepository.GetAllUsersWithActiveTraders(Arg.Any<PageRequest>()).Returns(_ =>
         {
             fetchAttempts++;
 
             return fetchAttempts == 1
-                ? Task.FromException<IEnumerable<UserEntity>>(new InvalidOperationException("users read failed"))
-                : Task.FromResult<IEnumerable<UserEntity>>([]);
+                ? Task.FromException<PagedResult<UserEntity>>(new InvalidOperationException("users read failed"))
+                : Task.FromResult(TestPages.Single<UserEntity>([]));
         });
 
         var lifecycleService = Substitute.For<ITraderLifecycleService>();
@@ -519,7 +521,7 @@ public class TradingRootSupervisorIntegrationTests
             TestContext.Current.CancellationToken);
 
         Assert.IsType<TraderSupervisorFoundResponse>(response);
-        await userRepository.Received(1).GetAllUsersWithActiveTraders();
+        await userRepository.Received(1).GetAllUsersWithActiveTraders(Arg.Any<PageRequest>());
 
         await actorSystem.Terminate();
     }
