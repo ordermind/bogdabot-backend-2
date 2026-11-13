@@ -153,31 +153,35 @@ public class UserRepositoryIntegrationTests
     }
 
     [Fact]
-    public async Task GetAllUsersWithActiveTraders_ReportsNextPage_EvenWhenUsersOfCurrentPageAreMissing()
+    public async Task GetAllUsersWithActiveTraders_FillsPageWhenRunningTradersHaveMissingUsers()
     {
         var databaseName = $"user-repo-tests-{Guid.NewGuid()}";
 
         await using var userContext = CreateUserContext(databaseName);
         await using var traderContext = CreateTraderContext(databaseName);
 
-        var existingUser = CreateUser(10, NonEmptyGuid.NewGuid(), "existing@example.com");
-        userContext.Users.Add(existingUser);
+        var firstExistingUser = CreateUser(10, NonEmptyGuid.NewGuid(), "first@example.com");
+        var secondExistingUser = CreateUser(20, NonEmptyGuid.NewGuid(), "second@example.com");
+        var thirdExistingUser = CreateUser(30, NonEmptyGuid.NewGuid(), "third@example.com");
+        userContext.Users.AddRange(firstExistingUser, secondExistingUser, thirdExistingUser);
         await userContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         traderContext.Traders.AddRange(
             CreateTrader(1, NonEmptyGuid.NewGuid(), TraderStatusEnum.Running),
-            CreateTrader(existingUser.Id, existingUser.Guid, TraderStatusEnum.Running)
+            CreateTrader(firstExistingUser.Id, firstExistingUser.Guid, TraderStatusEnum.Running),
+            CreateTrader(secondExistingUser.Id, secondExistingUser.Guid, TraderStatusEnum.Running),
+            CreateTrader(thirdExistingUser.Id, thirdExistingUser.Guid, TraderStatusEnum.Running)
         );
         await traderContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var repository = CreateRepository(databaseName);
 
-        var first = await repository.GetAllUsersWithActiveTraders(new PageRequest(1, 1));
-        var second = await repository.GetAllUsersWithActiveTraders(new PageRequest(2, 1));
+        var first = await repository.GetAllUsersWithActiveTraders(new PageRequest(1, 2));
+        var second = await repository.GetAllUsersWithActiveTraders(new PageRequest(2, 2));
 
-        Assert.Empty(first.Items);
+        Assert.Equal([firstExistingUser.Id, secondExistingUser.Id], first.Items.Select(user => user.Id));
         Assert.True(first.HasNextPage);
-        Assert.Equal(existingUser.Id, Assert.Single(second.Items).Id);
+        Assert.Equal(thirdExistingUser.Id, Assert.Single(second.Items).Id);
         Assert.False(second.HasNextPage);
     }
 

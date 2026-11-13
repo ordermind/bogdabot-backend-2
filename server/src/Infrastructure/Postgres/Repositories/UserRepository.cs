@@ -25,25 +25,56 @@ public class UserRepository(IDbContextFactory<UserDbContext> userContextFactory,
 
     public async Task<PagedResult<UserEntity>> GetAllUsersWithActiveTraders(PageRequest page, UserDbContext userContext, TraderDbContext traderContext)
     {
-        // Paginate over the distinct user ids so that the follow-up user query is bounded by the page size as well.
-        var activeUserIds = await traderContext.Traders
-            .Where(trader => trader.Status == TraderStatusEnum.Running)
-            .Select(trader => trader.UserId)
-            .Distinct()
-            .OrderBy(userId => userId)
-            .ToPagedResultAsync(page);
+        var users = new List<UserEntity>(page.PageSize + 1);
+        var skippedUsers = 0;
+        var sourcePage = 1;
 
-        if (activeUserIds.Items.Count == 0)
+        while (users.Count <= page.PageSize)
         {
-            return PagedResult<UserEntity>.Empty(page);
+            var activeUserIds = await traderContext.Traders
+                .Where(trader => trader.Status == TraderStatusEnum.Running)
+                .Select(trader => trader.UserId)
+                .Distinct()
+                .OrderBy(userId => userId)
+                .ToPagedResultAsync(new PageRequest(sourcePage, page.PageSize));
+
+            if (activeUserIds.Items.Count > 0)
+            {
+                var existingUsers = await userContext.Users
+                    .Where(user => activeUserIds.Items.Contains(user.Id))
+                    .OrderBy(user => user.Id)
+                    .ToListAsync();
+
+                foreach (var user in existingUsers)
+                {
+                    if (skippedUsers < page.Offset)
+                    {
+                        skippedUsers++;
+                        continue;
+                    }
+
+                    users.Add(user);
+                    if (users.Count > page.PageSize)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (users.Count > page.PageSize || !activeUserIds.HasNextPage)
+            {
+                break;
+            }
+
+            sourcePage++;
         }
 
-        var users = await userContext.Users
-            .Where(user => activeUserIds.Items.Contains(user.Id))
-            .OrderBy(user => user.Id)
-            .ToListAsync();
+        var hasNextPage = users.Count > page.PageSize;
+        if (hasNextPage)
+        {
+            users.RemoveAt(users.Count - 1);
+        }
 
-        // Users whose record is missing are skipped, so a page may contain fewer items than its size even if there is a next page.
-        return new PagedResult<UserEntity>(users, page.Page, page.PageSize, activeUserIds.HasNextPage);
+        return new PagedResult<UserEntity>(users, page.Page, page.PageSize, hasNextPage);
     }
 }
