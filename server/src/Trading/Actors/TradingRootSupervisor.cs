@@ -94,23 +94,26 @@ public class TradingRootSupervisor(
         try
         {
             // Start up trader supervisors for all users with active traders.
-            var usersWithActiveTraders = await Paginator.FetchAll(UserRepository.GetAllUsersWithActiveTraders);
-
-            foreach (var user in usersWithActiveTraders)
-            {
-                var actorId = PerUserTraderSupervisorId.FromUserGuid(user.Guid);
-
-                var result = StartTraderSupervisor(
-                    supervisorActorId: actorId,
-                    userGuid: user.Guid,
-                    sender: ActorRefs.Nobody
-                );
-
-                if (result is Result<IActorRef>.Error errorResult)
+            await Paginator.ForEachAsync(
+                UserRepository.GetAllUsersWithActiveTraders,
+                user =>
                 {
-                    Logger.LogError("Unable to create a trader supervisor for user {UserGuid}: {error}.", user.Guid, errorResult.ErrorValue.Reason);
+                    var actorId = PerUserTraderSupervisorId.FromUserGuid(user.Guid);
+
+                    var result = StartTraderSupervisor(
+                        supervisorActorId: actorId,
+                        userGuid: user.Guid,
+                        sender: ActorRefs.Nobody
+                    );
+
+                    if (result is Result<IActorRef>.Error errorResult)
+                    {
+                        Logger.LogError("Unable to create a trader supervisor for user {UserGuid}: {error}.", user.Guid, errorResult.ErrorValue.Reason);
+                    }
+
+                    return Task.CompletedTask;
                 }
-            }
+            );
         }
         catch (Exception ex)
         {

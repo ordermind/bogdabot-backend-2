@@ -5,6 +5,37 @@ namespace Bogdabot.Server.Tests.Unit.Shared.Pagination;
 public class PaginatorTests
 {
     [Fact]
+    public async Task ForEachAsync_ProcessesItemsBeforeRequestingTheNextPage()
+    {
+        var events = new List<string>();
+
+        await Paginator.ForEachAsync(
+            request =>
+            {
+                events.Add($"fetch-{request.Page}");
+                var hasNextPage = request.Page < 2;
+                return Task.FromResult(new PagedResult<int>(
+                    [request.Page * 10, request.Page * 10 + 1],
+                    request.Page,
+                    request.PageSize,
+                    hasNextPage
+                ));
+            },
+            item =>
+            {
+                events.Add($"process-{item}");
+                return Task.CompletedTask;
+            },
+            pageSize: 2
+        );
+
+        Assert.Equal(
+            ["fetch-1", "process-10", "process-11", "fetch-2", "process-20", "process-21"],
+            events
+        );
+    }
+
+    [Fact]
     public async Task FetchAll_RequestsConsecutivePagesUntilNoNextPage()
     {
         var requests = new List<PageRequest>();

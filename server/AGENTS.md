@@ -61,7 +61,9 @@ This order matters when introducing new dependencies or startup side effects.
   `PagedResult<T>`. A page can never hold more than `PageRequest.MaxPageSize` (100) items.
 - Order the query deterministically (by `Id`) and finish it with `ToPagedResultAsync(page)`
   (`src/Infrastructure/Miscellaneous/Database/Extensions/QueryablePaginationExtensions.cs`).
-- Internal code that genuinely needs every row uses `Paginator.FetchAll(...)`, which reads in batches of at most 100.
+- Internal code that can act on records as they are read uses `Paginator.ForEachAsync(...)`, retaining at most one page.
+- `Paginator.FetchAll(...)` is for operations that require a complete snapshot before acting on results, such as when
+  acting on an item could change membership in the queried set.
 
 ## Database Model
 
